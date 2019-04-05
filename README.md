@@ -2,6 +2,10 @@
 
 Bare bones debugger for Clojure, do not need any special IDE or editor - just only REPL.
 
+![alt text](https://user-images.githubusercontent.com/10473034/55596814-41d6a980-5753-11e9-86cd-a07e659b8757.png "Debug in terminal")
+
+![alt text](https://user-images.githubusercontent.com/10473034/55596818-47cc8a80-5753-11e9-93fe-64a458c90767.png "Debug in editor")
+
 ## Overview
 
 Two macroses, `dbg` and `dbg-all`, allows to set up single/multiple named/unnamed perpetual/conditional breakpoints in your Clojure code.
