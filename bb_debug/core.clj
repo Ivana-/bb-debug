@@ -10,6 +10,8 @@
   
 (defonce ^:dynamic *debug-context* {:repl-level 0})
 
+(defonce last-debug-context (atom nil))
+
 (defonce watch-frames (atom nil))
 
 ;; ----------------------------- prepare / eval-in-local-context
@@ -66,7 +68,7 @@
                                             request-prompt)))]
         (main/skip-if-eol *in*)
         (case input
-          ;; :repl/quit request-exit
+          ;; quit request-exit
           break (throw (InterruptedException. "Debug process was stoped by user"))
           input))))
 
@@ -96,18 +98,23 @@
 ;     (coll? v) (every? all-syms-binded? v)
 ;     :else true))
 
-(defn get-condition [v] (or (:cond v) (:when v)))
+(defn get-condition [v] (->> [(:cond v) (:when v)]
+                             (remove nil?)
+                             first))
 
 (defn eval-condition [v] (try (eval-in-local-context! v) (catch Exception e false)))
 
 ;; (format (str "%-" 80 "s") prompt)
 (defn make-break-point-name-condition [[params & x] {:keys [line column]}]
   (let [pp-form #(-> %
-                     pprint/pprint
-                     with-out-str
-                     ;; (str/replace #"\s+" " ")
-                     str/trim)]
-    {:break-point-condition (when-let [x (get-condition params)] (pp-form x))
+                     (pprint/write ;; :lines* - not yet supported, check later!
+                      :pretty true :stream true ;; (indicates *out*)                      
+                      :level 5 ;; :length 3
+                      ;; :right-margin 100 ;; :miser-width - let be default values
+                      :dispatch pprint/code-dispatch
+                      :suppress-namespaces true)
+                     with-out-str)]
+    {:break-point-condition (let [c (get-condition params)] (if-not (nil? c) (pp-form c)))
      :break-point-name (or (:name params) (-> x list-or-single-item remove-all-break-points pp-form))}))
 
 (defn print-break-point-info []
@@ -116,20 +123,74 @@
 
 ;; ----------------------------- break-point !!!
 
+(defn last-context []
+  (binding [*debug-context* @last-debug-context]
+    (refresh-frames)
+    (print-break-point-info)
+    (main/repl :eval repl-eval
+               :prompt repl-prompt
+               :read repl-read
+               :caught repl-caught)
+    (clear-frames))
+  nil)
+
+(defn break-point-on-start [locals params rf mf]
+  (binding [*debug-context* (merge {:locals locals
+                                    :repl-level (inc (:repl-level *debug-context*))}
+                                   (make-break-point-name-condition rf mf))]
+    (when (let [c (get-condition params)] (if (nil? c) true (eval-condition c)))
+      (refresh-frames)
+      (print-break-point-info)
+      (main/repl :eval repl-eval
+                 :prompt repl-prompt
+                 :read repl-read
+                 :caught repl-caught)
+      (clear-frames))
+    (reset! last-debug-context *debug-context*)))
+
 (defmacro break-point [params & body]
   `(do
-     (binding [*debug-context* (merge {:locals (locals-map)
-                                       :repl-level (inc (:repl-level *debug-context*))}
-                                      (make-break-point-name-condition '~(rest &form) ~(meta &form)))]
-       (when ~(if-let [c (get-condition params)] `(eval-condition '~c) true)
-         (refresh-frames)
-         (print-break-point-info)
-         (main/repl :eval repl-eval
-                    :prompt repl-prompt
-                    :read repl-read
-                    :caught repl-caught)
-         (clear-frames)))
+    ;  (binding [*debug-context* (merge {:locals (locals-map)
+    ;                                    :repl-level (inc (:repl-level *debug-context*))}
+    ;                                   (make-break-point-name-condition '~(rest &form) ~(meta &form)))]
+    ;    (when ~(let [c (get-condition params)] (if (nil? c) true `(eval-condition '~c)))
+    ;      (refresh-frames)
+    ;      (print-break-point-info)
+    ;      (main/repl :eval repl-eval
+    ;                 :prompt repl-prompt
+    ;                 :read repl-read
+    ;                 :caught repl-caught)
+    ;      (clear-frames))
+    ;    (reset! last-debug-context *debug-context*))
+     (break-point-on-start (locals-map) '~params '~(rest &form) ~(meta &form))
      ~(list-or-single-item body)))
+
+;; ----------------------------- failed experiment with eval break-point form into try block - recur not working!!!
+
+(defn break-point-on-catch------------- [e locals rf mf]
+  (when-not (isa? InterruptedException (class e))
+    ;; (refresh-frames)
+    (println (str (esc 91)
+                  (:break-point-name (make-break-point-name-condition rf mf))
+                  (esc 0)))
+    (println (str (.. e getClass getSimpleName) " " (.getMessage e)))
+    (binding [*debug-context* {:locals locals
+                               :repl-level (inc (:repl-level *debug-context*))}]
+      (do
+        (refresh-frames)
+        (main/repl :eval repl-eval
+                   :prompt repl-prompt
+                   :read repl-read
+                   :caught repl-caught)
+        (clear-frames))))
+  (throw e))
+
+(defmacro break-point--------------- [params & body]
+  `(do
+     (break-point-on-start (locals-map) '~params '~(rest &form) ~(meta &form))
+     (try ~(list-or-single-item body)
+          (catch Exception e#
+            (break-point-on-catch------------- e# (locals-map) '~(rest &form) ~(meta &form))))))
 
 ;; ----------------------------- group break-points
 
@@ -140,7 +201,7 @@
             (seq? v) (let [[e1 & e1-] v
                            [e2 & es] e1-]
                        (case e1
-                         (def set! quote) (conj (go es) e2 e1)
+                         (def set! quote) (conj (drop 2 (go es)) e2 e1)
                          (let* loop*) (conj (drop 2 (go es))
                                             (->> e2 (partition 2) (mapcat (fn [[a b]] [a (go b)])) vec)
                                             e1)
@@ -155,10 +216,9 @@
     (go v)))
 
 ; (defmacro debug-all-core [ps & x]
-;   `(binding [pprint/*print-suppress-namespaces* true]
 ;      ~(->> x list-or-single-item
 ;            walk/macroexpand-all
-;            (add-all-break-points ps))))
+;            (add-all-break-points ps)))
 
 (defmacro debug-all-core [ps & x] (->> x list-or-single-item walk/macroexpand-all (add-all-break-points ps)))
 
@@ -170,16 +230,16 @@
                (str "($1" (esc color) word (esc 0) "$2")))
 
 (defmacro pprint-expanded-form-with-all-break-points [x]
-  `(binding [pprint/*print-right-margin* 100
-             pprint/*print-suppress-namespaces* true]
-     (-> ~x
-         pprint/pprint
-         with-out-str
-         (color-all-break-points "break-point" 45) ;; 43 103 (+60)
-         (color-all-break-points "bb-debug.core/break-point" 45)
-         ;; str/trim
-         print ;; ln
-         )))
+  `(-> ~x
+       (pprint/write
+        :pretty true :stream true ;; (indicates *out*)                      
+        :right-margin 150 ;; :miser-width - let be default values
+        :dispatch pprint/code-dispatch
+        :suppress-namespaces true)
+       with-out-str
+       (color-all-break-points "break-point" 46) ;; 43 103 (+60)
+       (color-all-break-points "bb-debug.core/break-point" 45)
+       println))
 
 (defmacro debug-all-show [ps & x]
   `(->> '~x list-or-single-item

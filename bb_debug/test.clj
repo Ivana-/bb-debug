@@ -5,11 +5,16 @@
 
 ;; ----------------------------- test utils
 
+;; removing different forms
 (defn remove-all-forms-with-heads [v head-forms-to-remove]
   (let [go
         (fn go [v]
           (cond
-            (seq? v) (if (contains? head-forms-to-remove (first v)) nil (map go v))
+            (seq? v) (if (and
+                          (contains? head-forms-to-remove (first v))
+                          (seq? (second v)))
+                       nil
+                       (map go v))
             (map? v)  (reduce (fn [acc [k v]] (assoc acc (go k) (go v))) {} v)
             (coll? v) (into (empty v) (map go v))
             :else v))]
@@ -18,10 +23,8 @@
 (defmacro me [& x] `(-> '~x macroexpand          pprint-expanded-form-with-all-break-points))
 (defmacro ma [& x] `(-> '~x walk/macroexpand-all pprint-expanded-form-with-all-break-points))
 
-(defmacro me- [& x] `(-> '~x macroexpand
-                         (remove-all-forms-with-heads #{'make-break-point-name-condition})))
-(defmacro ma- [& x] `(-> '~x walk/macroexpand-all
-                         (remove-all-forms-with-heads #{'make-break-point-name-condition})))
+(defmacro me- [& x] `(-> '~x macroexpand (remove-all-forms-with-heads #{'quote})))
+(defmacro ma- [& x] `(-> '~x walk/macroexpand-all (remove-all-forms-with-heads #{'quote})))
 
 ;; ----------------------------- tests
 

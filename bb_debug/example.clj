@@ -1,16 +1,14 @@
 (ns bb-debug.example
-  (:require [bb-debug.core :refer [dbg dbg-all dbg-all* watch inspect]]
+  (:require [bb-debug.core :refer [dbg dbg-all dbg-all* watch inspect last-context]]
             [bb-debug.example-requires :as reqs]
             [bb-debug.test :refer :all]
             [clojure.string :as str]))
 
 (comment
 
-  (clojure-version)
-  
+  ;; (clojure-version) needs 1.9 or later cause of bounded count
   ;; (use '[bb-debug.core :refer [dbg dbg-all dbg-all* watch inspect]])
   
-  (alter-var-root #'clojure.pprint/*print-suppress-namespaces* (constantly true))
 
   ;; -------------------------------------------------------------------------------------------------------
   ;; single break-point
@@ -60,7 +58,8 @@
   ;; -------------------------------------------------------------------------------------------------------
   
   (defn fact [n]
-    (dbg if (<= n 0)
+    (dbg ^{:cond (= 3 n)}
+     if (<= n 0)
          1
          (* n (fact (- n 1)))))
 
@@ -135,5 +134,23 @@
   (for [i [1 2] j [1 2] k [1 2] n [1 2]] (dbg ^{:name "final"} [i j k n]))
   (watch {:i i :j j :k k :n n})
   (dbg-all* for [i [(atom 1) 2] j [1 2] k [1 2]] [i j k])
+
+
+  ;; -------------------------------------------------------------------------------------------------------
+  ;; last-context
+  ;; -------------------------------------------------------------------------------------------------------
+
+  (defn f [x]
+    (dbg-all ^{:cond false}
+     cond
+     (> 1 2) 3
+     (= "123" (subs x 0 3)) (+ 4 5 6)
+     :else 22))
+
+  (f 2)
+  (f "12")
+  (f "12345")
+  (last-context)
+
 ;;
-  )  
+  )
