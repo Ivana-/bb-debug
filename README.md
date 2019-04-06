@@ -14,6 +14,8 @@ Two another macroses, `inspect` and `watch`, allows to inspect any Clojure value
 
 `dbg-all*` macro expands multiple breakpoint forms and pretty-prints it with highlighted breakpoints.
 
+`last-context` function jumps you into nested REPL session with last debug context loaded and allows to inspect its local state. It especially useful after debug session breaking cause of exception.
+
 See `example.clj` and try eval it forms in REPL.
 
 ## License
