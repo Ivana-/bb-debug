@@ -130,22 +130,36 @@
   (doseq [i [1 2 3]] (^{:cond (= 2 i)} dbg prn i))
 
   (dbg-all ^{:cond (= 2 i j k n)} for [i [1 2] j [1 2] k [1 2] n [1 2]] [i j k n])
-  (dbg-all ^{:name "_"} for [i [1 2] j [1 2] k [1 2] n [1 2]] [i j k n])
+  (dbg-all for [i [1 2] j [1 2] k [1 2] n [1 2]] [i j k n])
   (for [i [1 2] j [1 2] k [1 2] n [1 2]] (dbg ^{:name "final"} [i j k n]))
   (watch {:i i :j j :k k :n n})
   (dbg-all* for [i [(atom 1) 2] j [1 2] k [1 2]] [i j k])
 
 
+  (defn fact [n]
+    (dbg
+     if (<= n 0)
+     1
+     (* n (fact (- n 1)))))
+
+  (fact 10)
+
+  (let [n 100 x 10] (dbg n))
+
+  (let [x (range)] (dbg take 5 x))
+  
+  (let [n 1] (dbg n))
+
   ;; -------------------------------------------------------------------------------------------------------
   ;; last-context
   ;; -------------------------------------------------------------------------------------------------------
-
+  
   (defn f [x]
     (dbg-all ^{:cond false}
      cond
-     (> 1 2) 3
-     (= "123" (subs x 0 3)) (+ 4 5 6)
-     :else 22))
+             (> 1 2) 3
+             (= "123" (subs x 0 3)) (+ 4 5 6)
+             :else 22))
 
   (f 2)
   (f "12")
