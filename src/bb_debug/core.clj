@@ -42,7 +42,7 @@
   (gui/refresh-locals-jframe
    {:title (-> *debug-context* :break-point-name str (str/replace #"\s+" " ") (substr-left 100))
     :data (reduce (fn [acc [k v]] (assoc acc (symbol k) v)) {} (:locals *debug-context*))})
-  ;;  (gui/open-locals-jframe)
+  (gui/open-locals-jframe)
   (doall (map (fn [{:keys [raw-form value]}] (reset! value (eval-in-local-context raw-form))) (vals @watch-frames))))
 
 (defn clear-frames []
@@ -165,32 +165,32 @@
      (break-point-on-start (locals-map) '~params '~(rest &form) ~(meta &form))
      ~(list-or-single-item body)))
 
-;; ----------------------------- failed experiment with eval break-point form into try block - recur not working!!!
+;; ;; ----------------------------- failed experiment with eval break-point form into try block - recur not working!!!
 
-(defn break-point-on-catch------------- [e locals rf mf]
-  (when-not (isa? InterruptedException (class e))
-    ;; (refresh-frames)
-    (println (str (esc 91)
-                  (:break-point-name (make-break-point-name-condition rf mf))
-                  (esc 0)))
-    (println (str (.. e getClass getSimpleName) " " (.getMessage e)))
-    (binding [*debug-context* {:locals locals
-                               :repl-level (inc (:repl-level *debug-context*))}]
-      (do
-        (refresh-frames)
-        (main/repl :eval repl-eval
-                   :prompt repl-prompt
-                   :read repl-read
-                   :caught repl-caught)
-        (clear-frames))))
-  (throw e))
+;; (defn break-point-on-catch------------- [e locals rf mf]
+;;   (when-not (isa? InterruptedException (class e))
+;;     ;; (refresh-frames)
+;;     (println (str (esc 91)
+;;                   (:break-point-name (make-break-point-name-condition rf mf))
+;;                   (esc 0)))
+;;     (println (str (.. e getClass getSimpleName) " " (.getMessage e)))
+;;     (binding [*debug-context* {:locals locals
+;;                                :repl-level (inc (:repl-level *debug-context*))}]
+;;       (do
+;;         (refresh-frames)
+;;         (main/repl :eval repl-eval
+;;                    :prompt repl-prompt
+;;                    :read repl-read
+;;                    :caught repl-caught)
+;;         (clear-frames))))
+;;   (throw e))
 
-(defmacro break-point--------------- [params & body]
-  `(do
-     (break-point-on-start (locals-map) '~params '~(rest &form) ~(meta &form))
-     (try ~(list-or-single-item body)
-          (catch Exception e#
-            (break-point-on-catch------------- e# (locals-map) '~(rest &form) ~(meta &form))))))
+;; (defmacro break-point--------------- [params & body]
+;;   `(do
+;;      (break-point-on-start (locals-map) '~params '~(rest &form) ~(meta &form))
+;;      (try ~(list-or-single-item body)
+;;           (catch Exception e#
+;;             (break-point-on-catch------------- e# (locals-map) '~(rest &form) ~(meta &form))))))
 
 ;; ----------------------------- group break-points
 
@@ -224,10 +224,12 @@
 
 ;; ----------------------------- pretty-print all form break-points
 
-(defn color-all-break-points [s word color]
-  (str/replace s
-               (re-pattern (str "\\((\\s*)" word "(\\s)"))
-               (str "($1" (esc color) word (esc 0) "$2")))
+(defn color-all-break-points [[s n] word color]
+  (let [pattern (re-pattern (str "\\((\\s*)" word "(\\s)"))]
+    [(str/replace s pattern (str "($1" (esc color) " " #_word (esc 0) "$2"))
+     (+ n (->> pattern (str/split s) count dec))]))
+
+(defn print-string-number [[s n]] (println (str s (when (pos? n) (str "\nTotal " n " breakpoints")))))
 
 (defmacro pprint-expanded-form-with-all-break-points [x]
   `(-> ~x
@@ -237,9 +239,13 @@
         :dispatch pprint/code-dispatch
         :suppress-namespaces true)
        with-out-str
+       vector
+       (conj 0)
+       (color-all-break-points "break-point\\s+\\{\\}" 46) ;; 43 103 (+60)
+       (color-all-break-points "bb-debug.core/break-point\\s+\\{\\}" 46 #_45)
        (color-all-break-points "break-point" 46) ;; 43 103 (+60)
-       (color-all-break-points "bb-debug.core/break-point" 45)
-       println))
+       (color-all-break-points "bb-debug.core/break-point" 46 #_45)
+       print-string-number))
 
 (defmacro debug-all-show [ps & x]
   `(->> '~x list-or-single-item
@@ -254,8 +260,7 @@
                  (.addWindowListener (proxy [WindowAdapter] []
                                        (windowClosing [evt]
                                          (swap! watch-frames dissoc (.. evt getWindow hashCode)))))
-                   ;; (.setVisible true)
-                 )
+                 (.setVisible true))
         value (atom nil)]
     (add-watch value :show-on-frame (fn [k a old new] (gui/show-on-jframe jframe new)))
     (reset! value (eval-in-local-context raw-form))
@@ -269,7 +274,8 @@
 ;; ----------------------------- inspect
   
 (defn inspect-core [title data]
-  (-> (gui/jframe-maker (substr-left title 100))
+  (-> (doto (gui/jframe-maker (substr-left title 100))
+        (.setVisible true))
       (gui/show-on-jframe data)))
 
 (defmacro inspect

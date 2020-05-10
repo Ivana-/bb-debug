@@ -114,17 +114,31 @@
    #(doto locals-jframe
       (.setContentPane (JScrollPane. (obj->jtree data)))
       (.setTitle title)
-      (.setVisible true))))
+      ;; 3 ways for update frame:
+      ;; 1-st: frame catches focus and repl loss cursor
+      ;; (.setVisible true)
+      ;; 2-nd: frame updates, but blinks gray/white
+      ;; (SwingUtilities/updateComponentTreeUI)
+      ;; 3-rd: works fine!
+      (.invalidate)
+      (.validate)
+      (.repaint))))
 
 (defn show-on-jframe [jframe data]
   (SwingUtilities/invokeLater
    #(doto jframe
       (.setContentPane (JScrollPane. (obj->jtree data)))
-      (.setVisible true))))
+      ;; (.setVisible true)
+      ;; (SwingUtilities/updateComponentTreeUI)
+      (.invalidate)
+      (.validate)
+      (.repaint))))
 
 
 (comment
 
+  (open-locals-jframe)
+  
   (let [x {:a '(1 2 3)
            :b 33
            :c [1 [2 3] 4 5]
@@ -132,9 +146,11 @@
            :e {:r (range)}
            :f (range)}]
     (refresh-locals-jframe {:data x :title "zazazazaza"}))
-  
+
   (refresh-locals-jframe {:data nil})
-  
+
   (refresh-locals-jframe {:data (range)})
+
+  (close-locals-jframe)
   ;;
   )

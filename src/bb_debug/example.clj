@@ -4,44 +4,42 @@
             [bb-debug.test :refer :all]
             [clojure.string :as str]))
 
+;; (clojure-version) needs 1.9 or later cause of bounded count
+
+;; in terminal:
+;; lein repl
+;; (require 'bb-debug.example)
+;; (in-ns 'bb-debug.example)
+;; or
+;; (use '[bb-debug.core :refer [dbg dbg-all dbg-all* watch inspect last-context]])
+
+
 (comment
+  "fprog-spb stream"
 
-  ;; (clojure-version) needs 1.9 or later cause of bounded count
-  ;; (use '[bb-debug.core :refer [dbg dbg-all dbg-all* watch inspect]])
-  
 
   ;; -------------------------------------------------------------------------------------------------------
-  ;; single break-point
+  ;; single break-point, local context REPL, local bindings frame
   ;; -------------------------------------------------------------------------------------------------------
-  
-  (me dbg + 1 2)
-  (me dbg (+ 1 2))
-
-  (me ^{:cond (= 1 a)} dbg ^{:name "b"} (+ 1 2))
-  (me ^{:cond (= 1 a) :name "b"} dbg    (+ 1 2))
-  (me dbg ^{:cond (= 1 a) :name "b"}    (+ 1 2))
-  (me ^{:cond (= 1 a)} dbg ^{:name "b"}  + 1 2)
-  (me ^{:cond (= 1 a) :name "b"} dbg     + 1 2)
-  (me dbg ^{:cond (= 1 a) :name "b"}     + 1 2)
 
 
-  (dbg 1)
   (dbg)
-
-  ((fn [x] ((fn [y] (dbg + x y)) 2)) 1)
+  (dbg 1)
 
   (let [x 33] (dbg x))
 
-  (reqs/fact 5)
+  (let [x (range)] (dbg take 5 x))
 
-  ((fn [z w q]
-     (dbg let [p {:a {:b 1 :c 2}}
-               x (reqs/fact (+ 1 z))]
-          (dbg [x p])))
-   2 4 6)
+  ((fn [x] ((fn [y] (dbg + x y)) 2)) 1)
+
+
+  ;; -------------------------------------------------------------------------------------------------------
+  ;; evaluations in local context REPL
+  ;; -------------------------------------------------------------------------------------------------------
+
 
   (let [p {:a {:b 1 :c 2}}
-        e (reduce (fn [acc i] (assoc acc i (str "val " i))) {} (range 1000))]
+        e (reduce (fn [acc i] (assoc acc i (str "val " i))) {} (range 10))]
     (dbg [p]))
 
   ;; eval in repl in local context of debugging form above
@@ -54,45 +52,95 @@
 
 
   ;; -------------------------------------------------------------------------------------------------------
+  ;; conditional / named breakpoints, break
+  ;; -------------------------------------------------------------------------------------------------------
+
+
+  (defn fact [n]
+    (dbg ;; ^{:cond (= 3 n) :name "body"}
+     if (<= n 0)
+     1
+     (* n (fact (- n 1)))))
+
+  (defn fact [n]
+    (dbg
+     if (dbg <= n 0)
+     1
+     (* n (fact (dbg - n 1)))))
+
+  (defn fact [n]
+    (dbg ^{:name "body"}
+     if (dbg ^{:name "if cond"} <= n 0)
+         1
+         (* n (fact (dbg ^{:name "arg dec"} - n 1)))))
+
+  (fact 5)
+  ;; break
+
+
+  ;; -------------------------------------------------------------------------------------------------------
   ;; watcher / inspector
   ;; -------------------------------------------------------------------------------------------------------
-  
-  (defn fact [n]
-    (dbg ^{:cond (= 3 n)}
-     if (<= n 0)
-         1
-         (* n (fact (- n 1)))))
 
-  (fact 10)
+
+  (defn fact [n] (dbg if (<= n 0) 1 (* n (fact (- n 1)))))
+
+  (fact 5)
 
   (watch [n (* 2 n)])
 
-  (+ n (let [n 33] n))
-
-
-  (for [i (range 10)] (dbg * 3 i))
-
-  (watch i)
+  (inspect [n (range)])
 
   (inspect {:a '(1 2 3)
             :b 33
             :c [1 [2 3] 4 5]
             :d [(range 8) (range 15) 3]
             :e {:r (range)}
-            :f (range)})
+            :f (range)
+            :h "abc"})
+
+  (+ n (let [n 33] n))
 
 
   ;; -------------------------------------------------------------------------------------------------------
-  ;; multiple break-point
+  ;; Level 2
   ;; -------------------------------------------------------------------------------------------------------
-  
+
+
+  (fact 5)
+  (fact 5)
+  (let [x (atom 33)] (dbg x))
+
+
+  ;; -------------------------------------------------------------------------------------------------------
+  ;; tmp variables in local context
+  ;; -------------------------------------------------------------------------------------------------------
+
+
+  (let [{:keys [a b]} {:a 1 :b 2}
+        [x y z] [3 4 5]]
+    (dbg [a b x y z]))
+
+
+  (map #(dbg * 3 %) (range 5))
+
+  (for [i (range 5)] (dbg * 3 i))
+
+  (watch i)
+
+
+  ;; -------------------------------------------------------------------------------------------------------
+  ;; multiple break-point - step-by-step debugging
+  ;; -------------------------------------------------------------------------------------------------------
+
+
   (dbg-all*                   + 1 (let [x (+ 1 2)] (+ 3 x)))
   (dbg-all*                  (+ 1 (let [x (+ 1 2)] (+ 3 x))))
   (dbg-all* ^{:cond (= 3 b)}  + 1 (let [x (+ 1 2)] (+ 3 x)))
   (dbg-all* ^{:cond (= 3 b)} (+ 1 (let [x (+ 1 2)] (+ 3 x))))
 
   ;; why macroexpand-all before?
-  
+
   (-> [x 1 y 2]
       (let (+ x y)))
 
@@ -104,56 +152,55 @@
             (> 20 10) (- 20 10)
             :else 200)
 
+  (dbg-all* (let [x 1] (inc x)))
 
   (dbg-all* -> [10 11]
             (conj 12)
             (as-> xs (map - xs [3 2 1]))
             (reverse))
-  (dbg-all (-> [10 11]
-               (conj 12)
-               (as-> xs (map - xs [3 2 1]))
-               (reverse)))
 
-  (dbg-all let [req {:host "//mysite.com" :path "/a/123" :x "15.1" :y "84.2"}]
-           (as-> req {:keys [host path x y] :as m}
-             (assoc m :url (str host path))
-             (assoc m :coord [(Double/valueOf x) (Double/valueOf y)])))
+  (dbg-all* let [req {:host "//mysite.com" :path "/a/123" :x "15.1" :y "84.2"}]
+            (as-> req {:keys [host path x y] :as m}
+              (assoc m :url (str host path))
+              (assoc m :coord [(Double/valueOf x) (Double/valueOf y)])))
 
-  (dbg-all as-> {:a 1 :b 2} m
-           (update m :a + 10)
-           (reduce (fn [s [_ v]] (+ s v)) 0 m))
+  (dbg-all* as-> {:a 1 :b 2} m
+            (update m :a + 10)
+            (reduce (fn [s [_ v]] (+ s v)) 0 m))
 
 
-  (dbg-all doseq [i [1 2 3]] (prn i))
+  ;; -------------------------------------------------------------------------------------------------------
+  ;; horror and darkness inside a dog !!!
+  ;; -------------------------------------------------------------------------------------------------------
+
+
+  ;; question - how much breakpoints will it have?
+  (dbg-all* doseq [i [1 2 3]] (prn i))
+
   (^{:cond (= 2 i)} dbg-all doseq [i [1 2 3]] (prn i))
+
   (doseq [i [1 2 3]] (dbg prn i))
+
   (doseq [i [1 2 3]] (^{:cond (= 2 i)} dbg prn i))
 
-  (dbg-all ^{:cond (= 2 i j k n)} for [i [1 2] j [1 2] k [1 2] n [1 2]] [i j k n])
-  (dbg-all for [i [1 2] j [1 2] k [1 2] n [1 2]] [i j k n])
-  (for [i [1 2] j [1 2] k [1 2] n [1 2]] (dbg ^{:name "final"} [i j k n]))
-  (watch {:i i :j j :k k :n n})
-  (dbg-all* for [i [(atom 1) 2] j [1 2] k [1 2]] [i j k])
 
+  (def v [1 2])
 
-  (defn fact [n]
-    (dbg
-     if (<= n 0)
-     1
-     (* n (fact (- n 1)))))
+  ;; question - how much breakpoints will it have?
+  (dbg-all* for [i v, j v, k v] [i j k])
 
-  (fact 10)
+  (watch {:i i :j j :k k})
 
-  (let [n 100 x 10] (dbg n))
+  (dbg-all ^{:cond (= 2 i j k)} for [i v, j v, k v] [i j k])
 
-  (let [x (range)] (dbg take 5 x))
-  
-  (let [n 1] (dbg n))
+  (for [i v, j v, k v] (dbg [i j k]))
+
 
   ;; -------------------------------------------------------------------------------------------------------
-  ;; last-context
+  ;; last-context - breakpoint on exception
   ;; -------------------------------------------------------------------------------------------------------
-  
+
+
   (defn f [x]
     (dbg-all ^{:cond false}
      cond
@@ -166,5 +213,31 @@
   (f "12345")
   (last-context)
 
-;;
+  ;;
+  )
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(comment
+
+  (me dbg + 1 2)
+  (me dbg (+ 1 2))
+
+  (me ^{:cond (= 1 a)} dbg ^{:name "b"} (+ 1 2))
+  (me ^{:cond (= 1 a) :name "b"} dbg    (+ 1 2))
+  (me dbg ^{:cond (= 1 a) :name "b"}    (+ 1 2))
+  (me ^{:cond (= 1 a)} dbg ^{:name "b"}  + 1 2)
+  (me ^{:cond (= 1 a) :name "b"} dbg     + 1 2)
+  (me dbg ^{:cond (= 1 a) :name "b"}     + 1 2)
+
+
+  (reqs/fact 5)
+
+  ((fn [z w q]
+     (dbg let [p {:a {:b 1 :c 2}}
+               x (reqs/fact (+ 1 z))]
+          (dbg [x p])))
+   2 4 6)
+
+  ;;
   )
