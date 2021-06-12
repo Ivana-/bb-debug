@@ -1,8 +1,6 @@
 (ns bb-debug.example
-  (:require [bb-debug.core :refer [dbg dbg-all dbg-all* watch inspect last-context]]
-            [bb-debug.example-requires :as reqs]
-            [bb-debug.test :refer :all]
-            [clojure.string :as str]))
+  (:require [bb-debug.core :refer [dbg dbg-all dbg-all* watch last-context]]
+            [bb-debug.inspect :refer [inspect]]))
 
 ;; (clojure-version) needs 1.9 or later cause of bounded count
 
@@ -11,12 +9,11 @@
 ;; (require 'bb-debug.example)
 ;; (in-ns 'bb-debug.example)
 ;; or
-;; (use '[bb-debug.core :refer [dbg dbg-all dbg-all* watch inspect last-context]])
+;; (use '[bb-debug.core :refer [dbg dbg-all dbg-all* watch last-context]])
 
 
 (comment
   "fprog-spb stream"
-
 
   ;; -------------------------------------------------------------------------------------------------------
   ;; single break-point, local context REPL, local bindings frame
@@ -82,6 +79,11 @@
   ;; watcher / inspector
   ;; -------------------------------------------------------------------------------------------------------
 
+  (defn fact [n]
+    (^{:cond (= 3 n) :name "factorial"} dbg)
+    (if (<= n 0)
+      1
+      (* n (fact (- n 1)))))
 
   (defn fact [n] (dbg if (<= n 0) 1 (* n (fact (- n 1)))))
 
@@ -175,7 +177,7 @@
 
 
   ;; question - how much breakpoints will it have?
-  (dbg-all* doseq [i [1 2 3]] (prn i))
+  (dbg-all doseq [i [1 2 3]] (prn i))
 
   (^{:cond (= 2 i)} dbg-all doseq [i [1 2 3]] (prn i))
 
@@ -187,7 +189,7 @@
   (def v [1 2])
 
   ;; question - how much breakpoints will it have?
-  (dbg-all* for [i v, j v, k v] [i j k])
+  (dbg-all for [i v, j v, k v] [i j k])
 
   (watch {:i i :j j :k k})
 
@@ -229,15 +231,6 @@
   (me ^{:cond (= 1 a)} dbg ^{:name "b"}  + 1 2)
   (me ^{:cond (= 1 a) :name "b"} dbg     + 1 2)
   (me dbg ^{:cond (= 1 a) :name "b"}     + 1 2)
-
-
-  (reqs/fact 5)
-
-  ((fn [z w q]
-     (dbg let [p {:a {:b 1 :c 2}}
-               x (reqs/fact (+ 1 z))]
-          (dbg [x p])))
-   2 4 6)
 
   ;;
   )

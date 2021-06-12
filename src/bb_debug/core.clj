@@ -1,13 +1,13 @@
 (ns bb-debug.core
-  (:import [java.awt.event WindowAdapter])
-  (:require [bb-debug.gui :as gui]
+  (:require [bb-debug.inspect :as inspect]
             [clojure.main :as main]
             [clojure.walk :as walk]
             [clojure.pprint :as pprint]
-            [clojure.string :as str]))
+            [clojure.string :as str])
+  (:import [java.awt.event WindowAdapter]))
 
 ;; ----------------------------- atoms / dynamics
-  
+
 (defonce ^:dynamic *debug-context* {:repl-level 0})
 
 (defonce last-debug-context (atom nil))
@@ -15,10 +15,10 @@
 (defonce watch-frames (atom nil))
 
 ;; ----------------------------- prepare / eval-in-local-context
-  
+
 (defn pre-eval [v]
   (list 'let (reduce (fn [acc [k v]] (conj acc
-                                           (symbol k) ;; v 
+                                           (symbol k) ;; v
                                            (list 'get-in 'bb-debug.core/*debug-context* [:locals k])))
                      [] (:locals *debug-context*)) v))
 
@@ -26,7 +26,7 @@
 (defn eval-in-local-context [v] (try (eval-in-local-context! v) (catch Exception e e)))
 
 ;; ----------------------------- utils
-  
+
 (defmacro locals-map [] (into {} (for [[sym val] &env] [(name sym) sym])))
 ;; (defmacro locals-vec [] (reduce (fn [acc [sym val]] (conj acc (list 'quote sym) sym)) [] &env))
 
@@ -38,20 +38,23 @@
 
 ;; ----------------------------- gui frames
 
+(defonce locals-jframe (inspect/jframe-create "Local bindings"))
+
 (defn refresh-frames []
-  (gui/refresh-locals-jframe
-   {:title (-> *debug-context* :break-point-name str (str/replace #"\s+" " ") (substr-left 100))
-    :data (reduce (fn [acc [k v]] (assoc acc (symbol k) v)) {} (:locals *debug-context*))})
-  (gui/open-locals-jframe)
+  (inspect/jframe-show
+   locals-jframe
+   (reduce (fn [acc [k v]] (assoc acc (symbol k) v)) {} (:locals *debug-context*))
+   (-> *debug-context* :break-point-name str (str/replace #"\s+" " ") (substr-left 100)))
+   (inspect/jframe-open locals-jframe)
   (doall (map (fn [{:keys [raw-form value]}] (reset! value (eval-in-local-context raw-form))) (vals @watch-frames))))
 
 (defn clear-frames []
-  (gui/refresh-locals-jframe nil)
-  ;; (gui/close-locals-jframe)
+  (inspect/jframe-clear locals-jframe)
+  ;; (inspect/jframe-close locals-jframe)
   (doall (map (fn [{value :value}] (reset! value nil)) (vals @watch-frames))))
 
 ;; ----------------------------- custom repl functions
-  
+
 (defn repl-caught [e]
   (if (instance? java.lang.InterruptedException e)
     (do
@@ -60,7 +63,7 @@
     (main/repl-caught e)))
 
 (defn repl-read [request-prompt request-exit]
-  (or ({:line-start request-exit ;; request-prompt 
+  (or ({:line-start request-exit ;; request-prompt
         :stream-end request-exit} (main/skip-whitespace *in*))
       (let [input (try (read {:read-cond :allow} *in*)
                        (catch Exception e (do
@@ -107,9 +110,12 @@
 ;; (format (str "%-" 80 "s") prompt)
 (defn make-break-point-name-condition [[params & x] {:keys [line column]}]
   (let [pp-form #(-> %
-                     (pprint/write ;; :lines* - not yet supported, check later!
-                      :pretty true :stream true ;; (indicates *out*)                      
-                      :level 5 ;; :length 3
+                     (pprint/write
+                      ;; :lines* - not yet supported, check later!
+                      :pretty true
+                      :stream true ;; (indicates *out*)
+                      :level 5
+                      ;; :length 3
                       ;; :right-margin 100 ;; :miser-width - let be default values
                       :dispatch pprint/code-dispatch
                       :suppress-namespaces true)
@@ -234,7 +240,7 @@
 (defmacro pprint-expanded-form-with-all-break-points [x]
   `(-> ~x
        (pprint/write
-        :pretty true :stream true ;; (indicates *out*)                      
+        :pretty true :stream true ;; (indicates *out*)
         :right-margin 150 ;; :miser-width - let be default values
         :dispatch pprint/code-dispatch
         :suppress-namespaces true)
@@ -254,15 +260,15 @@
         pprint-expanded-form-with-all-break-points))
 
 ;; ----------------------------- watch
-  
+
 (defn watch-core [title raw-form]
-  (let [jframe (doto (gui/jframe-maker (substr-left title 100))
+  (let [jframe (doto (inspect/jframe-create (substr-left title 100))
                  (.addWindowListener (proxy [WindowAdapter] []
                                        (windowClosing [evt]
                                          (swap! watch-frames dissoc (.. evt getWindow hashCode)))))
                  (.setVisible true))
         value (atom nil)]
-    (add-watch value :show-on-frame (fn [k a old new] (gui/show-on-jframe jframe new)))
+    (add-watch value :show-on-frame (fn [k a old new] (inspect/jframe-show jframe new)))
     (reset! value (eval-in-local-context raw-form))
     (swap! watch-frames assoc (.hashCode jframe) {:jframe jframe :raw-form raw-form :value value})
     nil))
@@ -270,17 +276,6 @@
 (defmacro watch
   ([s x] `(watch-core  ~s '~x))
   ([x]   `(watch-core '~x '~x)))
-
-;; ----------------------------- inspect
-  
-(defn inspect-core [title data]
-  (-> (doto (gui/jframe-maker (substr-left title 100))
-        (.setVisible true))
-      (gui/show-on-jframe data)))
-
-(defmacro inspect
-  ([s x] `(inspect-core  ~s ~x))
-  ([x]   `(inspect-core '~x ~x)))
 
 ;; ----------------------------- main export user debug macroses
 
@@ -296,7 +291,6 @@
 ; (defmacro dbg      [& body] `(dbg-common break-point ~body))
 ; (defmacro dbg-all  [& body] `(dbg-common debug-all-core ~body))
 ; (defmacro dbg-all* [& body] `(dbg-common debug-all-show ~body))
-
 
 ;; ----------------------------- comments
 
